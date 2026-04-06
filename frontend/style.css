@@ -1,0 +1,132 @@
+/* style.css — styles complémentaires à Tailwind */
+
+/* Carte offre */
+.offer-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  transition: box-shadow 0.15s, transform 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.offer-card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.offer-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #1e3a5f;
+  line-height: 1.3;
+}
+
+.offer-company {
+  font-size: 0.875rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+.offer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.offer-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.offer-description {
+  font-size: 0.8rem;
+  color: #4b5563;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.offer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.source-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.offer-link {
+  font-size: 0.8rem;
+  color: #2563eb;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.offer-link:hover {
+  text-decoration: underline;
+}
+
+/* Boutons pagination */
+.page-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.page-btn:hover {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.page-btn.active {
+  background: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+/* Toast notification */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e3a5f;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.3s ease;
+  z-index: 100;
+}
+
+.toast.show {
+  transform: translateY(0);
+  opacity: 1;
+}

@@ -1,2 +1,13 @@
+# Scraping
 playwright>=1.44.0
+
+# Traitement données
 pandas>=2.2.0
+
+# API
+fastapi>=0.111
+uvicorn[standard]>=0.29
+apscheduler>=3.10
+
+# Utils
+python-multipart>=0.0.9
