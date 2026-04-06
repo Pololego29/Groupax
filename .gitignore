@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+ENV/
+
+# Données locales (trop lourdes pour git)
+data/*.csv
+data/*.json
+data/*.db
+data/*.sqlite
+
+# Playwright
+playwright/.auth/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Variables d'environnement
+.env
+.env.*
