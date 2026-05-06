@@ -32,9 +32,9 @@ async function loadStats() {
   const sourcesEl = document.getElementById("stat-sources");
   sourcesEl.innerHTML = Object.entries(data.by_source)
     .map(([src, count]) => `
-      <div>
-        <span class="opacity-70 capitalize">${src}</span>
-        <span class="ml-1 font-semibold">${count.toLocaleString("fr-FR")}</span>
+      <div class="hero-source-item">
+        <span class="hero-source-count">${count.toLocaleString("fr-FR")}</span>
+        <span class="hero-source-name">${src}</span>
       </div>
     `).join("");
 
@@ -102,6 +102,10 @@ async function loadOffers(page = 1) {
     empty.classList.add("hidden");
     count.textContent = `${data.total.toLocaleString("fr-FR")} offres trouvées`;
     grid.innerHTML = data.offers.map(renderCard).join("");
+    // Délai en cascade sur chaque carte
+    grid.querySelectorAll(".offer-card").forEach((card, i) => {
+      card.style.animationDelay = `${i * 0.05}s`;
+    });
   }
 
   renderPagination(data.page, data.pages);

@@ -87,7 +87,7 @@ USER_AGENTS = [
 # SECTION 3 – FONCTIONS UTILITAIRES
 # =============================================================================
 
-def clean_text(text: str | None) -> str:
+def clean_text(text: "str | None") -> str:
     """Nettoie une chaîne HTML : supprime espaces multiples et sauts de ligne."""
     if not text:
         return ""

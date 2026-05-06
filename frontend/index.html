@@ -5,95 +5,108 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Groupax – Offres d'alternance</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body>
 
   <!-- ===== HEADER ===== -->
-  <header class="bg-white border-b border-gray-200 sticky top-0 z-10">
-    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-          <span class="text-white font-bold text-sm">G</span>
-        </div>
-        <span class="font-semibold text-gray-800 text-lg">Groupax Alternances</span>
-      </div>
-      <button
-        onclick="triggerScrape()"
-        class="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition"
-      >
-        Actualiser maintenant
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-icon">G</div>
+        <span class="logo-text">Groupax</span>
+      </a>
+      <button onclick="triggerScrape()" class="btn-refresh">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+        Actualiser
       </button>
     </div>
   </header>
 
-  <!-- ===== STATS BAR ===== -->
-  <div class="bg-blue-600 text-white">
-    <div class="max-w-6xl mx-auto px-6 py-4 flex flex-wrap gap-6 text-sm">
-      <div>
-        <span class="opacity-70">Total offres</span>
-        <span id="stat-total" class="ml-2 font-bold text-lg">—</span>
-      </div>
-      <div id="stat-sources" class="flex gap-4"></div>
-      <div class="ml-auto opacity-70">
-        Dernière collecte : <span id="stat-last">—</span>
+  <!-- ===== HERO ===== -->
+  <section class="hero">
+    <div class="hero-inner">
+      <h1 class="hero-title">Trouve ton <span class="hero-accent">alternance</span></h1>
+      <p class="hero-subtitle">Des milliers d'offres collectées automatiquement depuis Indeed et bien plus encore.</p>
+
+      <!-- Stats inline -->
+      <div class="hero-stats">
+        <div class="hero-stat">
+          <span class="hero-stat-value" id="stat-total">—</span>
+          <span class="hero-stat-label">offres disponibles</span>
+        </div>
+        <div class="hero-stat-sep"></div>
+        <div id="stat-sources" class="hero-stat-sources"></div>
+        <div class="hero-stat-sep"></div>
+        <div class="hero-stat">
+          <span class="hero-stat-value" id="stat-last">—</span>
+          <span class="hero-stat-label">dernière collecte</span>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- ===== FILTRES ===== -->
-  <div class="max-w-6xl mx-auto px-6 py-5">
-    <div class="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap gap-3">
-      <input
-        id="search"
-        type="text"
-        placeholder="Titre, entreprise, mot-clé…"
-        class="flex-1 min-w-48 border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-        oninput="debouncedSearch()"
-      />
-      <input
-        id="location"
-        type="text"
-        placeholder="Ville, région…"
-        class="w-48 border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-        oninput="debouncedSearch()"
-      />
-      <select
-        id="source"
-        class="border border-gray-200 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-        onchange="loadOffers(1)"
-      >
-        <option value="">Toutes les sources</option>
-      </select>
-      <button
-        onclick="resetFilters()"
-        class="text-sm text-gray-500 hover:text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-100 transition"
-      >
-        Réinitialiser
-      </button>
+  <div class="filters-wrapper">
+    <div class="filters-card">
+      <div class="filter-group">
+        <label class="filter-label">Recherche</label>
+        <div class="filter-input-wrap">
+          <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input id="search" type="text" placeholder="Titre, entreprise, mot-clé…" oninput="debouncedSearch()" />
+        </div>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label">Localisation</label>
+        <div class="filter-input-wrap">
+          <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+          <input id="location" type="text" placeholder="Ville, région…" oninput="debouncedSearch()" />
+        </div>
+      </div>
+      <div class="filter-group">
+        <label class="filter-label">Source</label>
+        <div class="filter-input-wrap">
+          <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
+          <select id="source" onchange="loadOffers(1)">
+            <option value="">Toutes les sources</option>
+          </select>
+        </div>
+      </div>
+      <button onclick="resetFilters()" class="btn-reset">Réinitialiser</button>
     </div>
   </div>
 
-  <!-- ===== LISTE DES OFFRES ===== -->
-  <main class="max-w-6xl mx-auto px-6 pb-12">
-    <div id="result-count" class="text-sm text-gray-500 mb-4"></div>
+  <!-- ===== CONTENU ===== -->
+  <main class="main-content">
+    <div id="result-count" class="result-count"></div>
 
-    <div id="offers-grid" class="grid gap-4 md:grid-cols-2">
-      <!-- Offres injectées par app.js -->
+    <div id="offers-grid" class="offers-grid"></div>
+
+    <div id="empty-state" class="empty-state hidden">
+      <div class="empty-icon">🔍</div>
+      <p class="empty-title">Aucune offre trouvée</p>
+      <p class="empty-sub">Essayez d'élargir vos critères de recherche</p>
     </div>
 
-    <div id="empty-state" class="hidden text-center py-16 text-gray-400">
-      <p class="text-2xl mb-2">Aucune offre trouvée</p>
-      <p class="text-sm">Essayez d'élargir vos filtres</p>
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>Chargement des offres…</span>
     </div>
 
-    <div id="loading" class="hidden text-center py-12">
-      <div class="inline-block w-8 h-8 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-    </div>
-
-    <!-- Pagination -->
-    <div id="pagination" class="flex justify-center gap-2 mt-8"></div>
+    <div id="pagination" class="pagination"></div>
   </main>
+
+  <!-- ===== FOOTER ===== -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <span class="logo-text">Groupax</span>
+      <span class="footer-sep">·</span>
+      <span>Agrégateur d'offres d'alternance</span>
+    </div>
+  </footer>
 
   <script src="/static/app.js"></script>
 </body>

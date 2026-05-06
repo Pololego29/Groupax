@@ -121,11 +121,9 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     print("[api] Scheduler démarré — scraping toutes les 6h")
 
-    # Premier scraping au démarrage si la base est vide
-    stats = get_stats()
-    if stats["total"] == 0:
-        print("[api] Base vide — premier scraping lancé...")
-        asyncio.create_task(run_scraping_job())
+    # Scraping au démarrage
+    print("[api] Scraping initial lancé...")
+    asyncio.create_task(run_scraping_job())
 
     yield  # L'application tourne ici
 
