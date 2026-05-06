@@ -4,7 +4,7 @@
  * et la communication avec l'API FastAPI.
  */
 
-const API = "http://localhost:8000/api";
+const API = typeof API_URL !== "undefined" ? API_URL : "http://localhost:8000/api";
 let currentPage = 1;
 let debounceTimer = null;
 
@@ -206,10 +206,11 @@ function resetFilters() {
   loadOffers(1);
 }
 
-async function triggerScrape() {
-  showToast("Scraping lancé, les offres seront mises à jour dans quelques minutes…");
-  await fetch(`${API}/scrape`, { method: "POST" });
-  setTimeout(() => { loadStats(); loadOffers(currentPage); }, 3000);
+function refresh() {
+  loadStats();
+  loadSources();
+  loadOffers(currentPage);
+  showToast("Données actualisées");
 }
 
 // =============================================================================

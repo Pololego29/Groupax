@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Groupax – Offres d'alternance</title>
+  <title>Alternax – Offres d'alternance</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
@@ -16,13 +16,13 @@
         <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
           <span class="text-white font-bold text-sm">G</span>
         </div>
-        <span class="font-semibold text-gray-800 text-lg">Groupax Alternances</span>
+        <span class="font-semibold text-gray-800 text-lg">Alternax</span>
       </div>
       <button
-        onclick="triggerScrape()"
+        onclick="refresh()"
         class="text-sm text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition"
       >
-        Actualiser maintenant
+        Actualiser
       </button>
     </div>
   </header>
@@ -95,6 +95,7 @@
     <div id="pagination" class="flex justify-center gap-2 mt-8"></div>
   </main>
 
+  <script src="/static/config.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

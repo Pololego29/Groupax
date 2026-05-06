@@ -7,7 +7,7 @@ Ce module utilise Playwright (navigateur headless) plutôt que requests/Beautifu
 car Indeed charge ses offres via JavaScript. Un simple GET HTTP ne retourne pas
 les annonces — il faut un vrai navigateur.
 
-Auteurs      : Groupax
+Auteurs      : Alternax
 Dépendances  : playwright (pip install playwright && playwright install chromium)
 Sortie       : data/indeed_offers.csv  +  data/indeed_offers.json
 
@@ -316,7 +316,7 @@ class IndeedScraper:
         """
         async with async_playwright() as p:
             browser = await p.chromium.launch(
-                headless=False,  # False = moins détectable par Indeed
+                headless=True,
                 args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
             )
 

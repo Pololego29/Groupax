@@ -1,66 +1,67 @@
 """
 database/db.py
 ==============
-Gestion de la base de données SQLite.
+Accès à la base de données.
 
-Contient :
-- La définition du schéma (table offers)
-- Les fonctions CRUD utilisées par l'API et le pipeline
+Backends supportés (détecté automatiquement via DATABASE_URL) :
+- SQLite    : local, aucune configuration requise
+- PostgreSQL : production, nécessite DATABASE_URL dans l'environnement
+
+En local : laisser DATABASE_URL vide → SQLite dans data/offers.db
+En prod  : définir DATABASE_URL=postgresql://user:pass@host/db
 """
 
+import os
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "data" / "offers.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DB_PATH      = Path(__file__).parent.parent / "data" / "offers.db"
+_USE_PG      = bool(DATABASE_URL)
 
 
 # =============================================================================
-# SECTION 1 – INITIALISATION
+# SECTION 1 – CONNEXION (abstraction SQLite / PostgreSQL)
 # =============================================================================
 
-def init_db() -> None:
+class _Conn:
     """
-    Crée la base de données et la table si elles n'existent pas encore.
-    Appelé au démarrage de l'API.
+    Normalise sqlite3 et psycopg2 derrière une interface commune.
+    Adapte les placeholders (? pour SQLite, %s pour PostgreSQL).
     """
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with get_conn() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS offers (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                title         TEXT    NOT NULL,
-                company       TEXT    DEFAULT '',
-                location      TEXT    DEFAULT '',
-                contract_type TEXT    DEFAULT 'Alternance',
-                salary        TEXT    DEFAULT '',
-                description   TEXT    DEFAULT '',
-                url           TEXT    UNIQUE,       -- clé de déduplication principale
-                source        TEXT    DEFAULT '',
-                scraped_at    TEXT    DEFAULT '',
-                created_at    TEXT    DEFAULT (datetime('now'))
-            )
-        """)
-        # Index pour accélérer les filtres courants
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_source   ON offers(source)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_location ON offers(location)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_created  ON offers(created_at)")
+    __slots__ = ("_raw", "_pg")
 
+    def __init__(self, raw, use_pg: bool):
+        self._raw = raw
+        self._pg  = use_pg
 
-# =============================================================================
-# SECTION 2 – CONNEXION
-# =============================================================================
+    def execute(self, sql: str, params=None):
+        if self._pg:
+            sql = sql.replace("?", "%s")
+        cur = self._raw.cursor()
+        cur.execute(sql, params or [])
+        return cur
+
+    def commit(self):   self._raw.commit()
+    def rollback(self): self._raw.rollback()
+    def close(self):    self._raw.close()
+
 
 @contextmanager
 def get_conn():
-    """
-    Gestionnaire de contexte pour les connexions SQLite.
-    Garantit le commit/rollback automatique et la fermeture de la connexion.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row   # Résultats accessibles par nom de colonne
+    """Retourne une connexion normalisée vers SQLite ou PostgreSQL."""
+    if _USE_PG:
+        import psycopg2
+        from psycopg2.extras import DictCursor
+        raw = psycopg2.connect(DATABASE_URL)
+        raw.cursor_factory = DictCursor
+    else:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        raw = sqlite3.connect(str(DB_PATH))
+        raw.row_factory = sqlite3.Row
+
+    conn = _Conn(raw, use_pg=_USE_PG)
     try:
         yield conn
         conn.commit()
@@ -72,58 +73,90 @@ def get_conn():
 
 
 # =============================================================================
+# SECTION 2 – INITIALISATION
+# =============================================================================
+
+_SCHEMA_PK = "SERIAL PRIMARY KEY"      if _USE_PG else "INTEGER PRIMARY KEY AUTOINCREMENT"
+_SCHEMA_TS = "TIMESTAMP DEFAULT NOW()" if _USE_PG else "TEXT DEFAULT (datetime('now'))"
+
+
+def init_db() -> None:
+    """Crée la table offers et ses index si nécessaire."""
+    with get_conn() as conn:
+        conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS offers (
+                id            {_SCHEMA_PK},
+                title         TEXT      NOT NULL,
+                company       TEXT      DEFAULT '',
+                location      TEXT      DEFAULT '',
+                contract_type TEXT      DEFAULT 'Alternance',
+                salary        TEXT      DEFAULT '',
+                description   TEXT      DEFAULT '',
+                url           TEXT      UNIQUE,
+                source        TEXT      DEFAULT '',
+                scraped_at    TEXT      DEFAULT '',
+                created_at    {_SCHEMA_TS}
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_source   ON offers(source)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_location ON offers(location)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_created  ON offers(created_at)")
+
+
+# =============================================================================
 # SECTION 3 – ÉCRITURE
 # =============================================================================
 
+# INSERT OR IGNORE (SQLite) vs ON CONFLICT DO NOTHING (PostgreSQL)
+_INSERT_SQL = (
+    """INSERT INTO offers
+           (title, company, location, contract_type, salary, description, url, source, scraped_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (url) DO NOTHING"""
+    if _USE_PG else
+    """INSERT OR IGNORE INTO offers
+           (title, company, location, contract_type, salary, description, url, source, scraped_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+)
+
+
+def _params(offer: dict) -> list:
+    return [
+        offer.get("title", ""),
+        offer.get("company", ""),
+        offer.get("location", ""),
+        offer.get("contract_type", "Alternance"),
+        offer.get("salary", ""),
+        offer.get("description", ""),
+        offer.get("url", ""),
+        offer.get("source", ""),
+        offer.get("scraped_at", ""),
+    ]
+
+
 def insert_offer(offer: dict) -> bool:
-    """
-    Insère une offre dans la base.
-
-    Utilise INSERT OR IGNORE : si l'URL existe déjà, l'offre est silencieusement ignorée.
-    C'est la première ligne de défense contre les doublons.
-
-    Args:
-        offer : Dictionnaire avec les champs de JobOffer
-
-    Returns:
-        True si l'offre a été insérée, False si elle existait déjà
-    """
+    """Insère une offre. Retourne True si insérée, False si déjà existante."""
     with get_conn() as conn:
-        cursor = conn.execute("""
-            INSERT OR IGNORE INTO offers
-                (title, company, location, contract_type, salary, description, url, source, scraped_at)
-            VALUES
-                (:title, :company, :location, :contract_type, :salary, :description, :url, :source, :scraped_at)
-        """, offer)
-        return cursor.rowcount > 0
+        cur = conn.execute(_INSERT_SQL, _params(offer))
+        return cur.rowcount > 0
 
 
 def insert_offers_bulk(offers: list[dict]) -> int:
-    """
-    Insère une liste d'offres en une seule transaction (plus rapide).
-
-    Args:
-        offers : Liste de dictionnaires JobOffer
-
-    Returns:
-        Nombre d'offres réellement insérées (hors doublons)
-    """
+    """Insère plusieurs offres en une transaction. Retourne le nombre inséré."""
     inserted = 0
     with get_conn() as conn:
         for offer in offers:
-            cursor = conn.execute("""
-                INSERT OR IGNORE INTO offers
-                    (title, company, location, contract_type, salary, description, url, source, scraped_at)
-                VALUES
-                    (:title, :company, :location, :contract_type, :salary, :description, :url, :source, :scraped_at)
-            """, offer)
-            inserted += cursor.rowcount
+            cur = conn.execute(_INSERT_SQL, _params(offer))
+            inserted += cur.rowcount
     return inserted
 
 
 # =============================================================================
 # SECTION 4 – LECTURE
 # =============================================================================
+
+_LIKE = "ILIKE" if _USE_PG else "LIKE"  # ILIKE = insensible à la casse en PostgreSQL
+
 
 def get_offers(
     search: str = "",
@@ -132,42 +165,32 @@ def get_offers(
     page: int = 1,
     per_page: int = 20,
 ) -> tuple[list[dict], int]:
-    """
-    Récupère les offres avec filtres optionnels et pagination.
-
-    Args:
-        search   : Recherche fulltext sur titre + entreprise + description
-        location : Filtre sur la ville/région (LIKE)
-        source   : Filtre sur la source ("indeed", "hellowork"…)
-        page     : Numéro de page (commence à 1)
-        per_page : Nombre d'offres par page
-
-    Returns:
-        (liste d'offres sous forme de dict, total d'offres correspondantes)
-    """
-    conditions = []
-    params: list = []
+    """Récupère les offres avec filtres et pagination."""
+    conditions: list[str] = []
+    params:     list      = []
 
     if search:
-        conditions.append("(title LIKE ? OR company LIKE ? OR description LIKE ?)")
+        conditions.append(
+            f"(title {_LIKE} ? OR company {_LIKE} ? OR description {_LIKE} ?)"
+        )
         term = f"%{search}%"
         params.extend([term, term, term])
 
     if location:
-        conditions.append("location LIKE ?")
+        conditions.append(f"location {_LIKE} ?")
         params.append(f"%{location}%")
 
     if source:
         conditions.append("source = ?")
         params.append(source)
 
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     offset = (page - 1) * per_page
 
     with get_conn() as conn:
         total = conn.execute(
-            f"SELECT COUNT(*) FROM offers {where}", params
-        ).fetchone()[0]
+            f"SELECT COUNT(*) AS n FROM offers {where}", params
+        ).fetchone()["n"]
 
         rows = conn.execute(
             f"""
@@ -184,24 +207,19 @@ def get_offers(
 
 
 def get_stats() -> dict:
-    """
-    Retourne des statistiques globales sur la base.
-
-    Utilisé par le frontend pour afficher :
-    - Le nombre total d'offres
-    - Le nombre d'offres par source
-    - La date de la dernière collecte
-    """
+    """Statistiques globales : total, par source, dernière collecte."""
     with get_conn() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM offers").fetchone()[0]
+        total = conn.execute(
+            "SELECT COUNT(*) AS n FROM offers"
+        ).fetchone()["n"]
 
         by_source = conn.execute(
-            "SELECT source, COUNT(*) as count FROM offers GROUP BY source"
+            "SELECT source, COUNT(*) AS count FROM offers GROUP BY source"
         ).fetchall()
 
         last_scrape = conn.execute(
-            "SELECT MAX(scraped_at) FROM offers"
-        ).fetchone()[0]
+            "SELECT MAX(scraped_at) AS last FROM offers"
+        ).fetchone()["last"]
 
     return {
         "total": total,
@@ -211,7 +229,9 @@ def get_stats() -> dict:
 
 
 def url_exists(url: str) -> bool:
-    """Vérifie si une URL est déjà en base (utilisé par le déduplicateur)."""
+    """Vérifie si une URL est déjà en base."""
     with get_conn() as conn:
-        row = conn.execute("SELECT 1 FROM offers WHERE url = ?", (url,)).fetchone()
+        row = conn.execute(
+            "SELECT 1 FROM offers WHERE url = ?", [url]
+        ).fetchone()
         return row is not None
