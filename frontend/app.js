@@ -2,21 +2,69 @@
  * app.js
  * Gère l'affichage des offres, les filtres, la pagination
  * et la communication avec l'API FastAPI.
+ * 
+ * v1.1.0 - Améliorations: animations, debounce avancé, performance tracking
  */
 
 const API = typeof API_URL !== "undefined" ? API_URL : "http://localhost:8000/api";
 let currentPage = 1;
 let debounceTimer = null;
+let requestInProgress = false;
+let lastRequestTime = 0;
+
+// Tracking de performance
+const perfMetrics = {
+  apiCalls: [],
+  startTime: Date.now()
+};
 
 // =============================================================================
 // INITIALISATION
 // =============================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-  loadStats();
-  loadSources();
-  loadOffers(1);
+  console.log("[App] Initializing Alternax v1.1.0");
+  
+  // Charge les données
+  Promise.all([
+    loadStats(),
+    loadSources()
+  ]).then(() => {
+    loadOffers(1);
+  });
+  
+  // Configure les événements de filtre
+  const searchInput = document.getElementById("search");
+  if (searchInput) {
+    searchInput.addEventListener("input", debouncedSearch);
+  }
+  
+  const locationInput = document.getElementById("location");
+  if (locationInput) {
+    locationInput.addEventListener("input", debouncedSearch);
+  }
+  
+  const sourceSelect = document.getElementById("source");
+  if (sourceSelect) {
+    sourceSelect.addEventListener("change", () => loadOffers(1));
+  }
 });
+
+// =============================================================================
+// PERFORMANCE TRACKING
+// =============================================================================
+
+function trackAPICall(endpoint, duration) {
+  perfMetrics.apiCalls.push({
+    endpoint,
+    duration,
+    timestamp: Date.now()
+  });
+  
+  if (duration > 1000) {
+    console.warn(`[Performance] Slow API call: ${endpoint} took ${duration}ms`);
+  }
+}
 
 // =============================================================================
 // STATS
@@ -24,7 +72,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function loadStats() {
   try {
+    const startTime = performance.now();
     const data = await fetchJson(`${API}/stats`);
+    const duration = performance.now() - startTime;
+    trackAPICall("stats", duration);
+    
     if (!data) {
       console.warn("Failed to load stats");
       return;
@@ -32,15 +84,17 @@ async function loadStats() {
 
     const totalEl = document.getElementById("stat-total");
     if (totalEl) {
-      totalEl.textContent = (data.total || 0).toLocaleString("fr-FR");
+      // Animation du nombre (compte de 0 au total)
+      animateCounter(totalEl, 0, data.total || 0, 800);
     }
 
     // Badge par source
     const sourcesEl = document.getElementById("stat-sources");
     if (sourcesEl) {
       sourcesEl.innerHTML = Object.entries(data.by_source || {})
-        .map(([src, count]) => `
-          <div>
+        .sort((a, b) => b[1] - a[1])  // Trier par nombre décroissant
+        .map(([src, count], idx) => `
+          <div style="animation: fadeIn 0.4s ease ${idx * 0.05}s forwards; opacity: 0;">
             <span class="opacity-70 capitalize">${escapeHtml(src)}</span>
             <span class="ml-1 font-semibold">${(count || 0).toLocaleString("fr-FR")}</span>
           </div>
@@ -69,13 +123,33 @@ async function loadStats() {
   }
 }
 
+// Animation de compteur pour les statistiques
+function animateCounter(element, start, end, duration) {
+  const range = end - start;
+  const increment = range / (duration / 16); // 60 FPS
+  let current = start;
+  
+  const timer = setInterval(() => {
+    current += increment;
+    if (current >= end) {
+      current = end;
+      clearInterval(timer);
+    }
+    element.textContent = Math.floor(current).toLocaleString("fr-FR");
+  }, 16);
+}
+
 // =============================================================================
 // SOURCES (pour le select)
 // =============================================================================
 
 async function loadSources() {
   try {
+    const startTime = performance.now();
     const sources = await fetchJson(`${API}/sources`);
+    const duration = performance.now() - startTime;
+    trackAPICall("sources", duration);
+    
     if (!sources || !Array.isArray(sources)) {
       console.warn("No sources data received");
       return;

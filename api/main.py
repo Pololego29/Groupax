@@ -7,9 +7,12 @@ Le scraping est géré par GitHub Actions (.github/workflows/scrape.yml).
 L'API ne fait que lire/écrire en base et servir le frontend.
 
 Endpoints :
-    GET /api/offres     Liste paginée avec filtres
-    GET /api/stats      Statistiques globales
-    GET /api/sources    Sources disponibles
+    GET /                   Page d'accueil
+    GET /api/offres         Liste paginée avec filtres
+    GET /api/stats          Statistiques globales (cachées)
+    GET /api/sources        Sources disponibles (cachées)
+    GET /api/health         Health check
+    GET /api/metrics        Métriques (optionnel)
 
 Démarrage local :
     uvicorn api.main:app --reload --port 8000
@@ -17,22 +20,30 @@ Démarrage local :
 Variables d'environnement :
     DATABASE_URL  : PostgreSQL en prod (absent = SQLite local)
     FRONTEND_URL  : Restreint le CORS à cette origine (absent = ouvert)
+    CACHE_TTL_STATS : Cache time-to-live pour stats (défaut: 300s)
 """
 
 import logging
 import os
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from collections import defaultdict
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database.db import init_db, get_offers, get_stats
+from config import (
+    get_cors_origins, API_HOST, API_PORT, CACHE_TTL_STATS, CACHE_TTL_SOURCES,
+    FEATURE_HEALTH_CHECK, FEATURE_METRICS, FEATURE_SWAGGER
+)
+from cache import cached
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,9 +51,68 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# METRICS
+# =============================================================================
+
+class MetricsCollector:
+    """Collecte les métriques d'utilisation de l'API."""
+    
+    def __init__(self):
+        self.requests_total = 0
+        self.requests_by_endpoint = defaultdict(int)
+        self.cache_hits = 0
+        self.cache_misses = 0
+        self.start_time = time.time()
+    
+    def record_request(self, endpoint: str):
+        self.requests_total += 1
+        self.requests_by_endpoint[endpoint] += 1
+    
+    def record_cache_hit(self):
+        self.cache_hits += 1
+    
+    def record_cache_miss(self):
+        self.cache_misses += 1
+    
+    def get_stats(self) -> dict:
+        uptime = time.time() - self.start_time
+        return {
+            "uptime_seconds": uptime,
+            "total_requests": self.requests_total,
+            "requests_by_endpoint": dict(self.requests_by_endpoint),
+            "cache_hits": self.cache_hits,
+            "cache_misses": self.cache_misses,
+            "cache_hit_rate": (
+                self.cache_hits / (self.cache_hits + self.cache_misses)
+                if (self.cache_hits + self.cache_misses) > 0 else 0
+            ),
+        }
+
+
+metrics = MetricsCollector()
+
 
 # =============================================================================
-# SECTION 1 – CYCLE DE VIE
+# CACHED FUNCTIONS
+# =============================================================================
+
+@cached(ttl=CACHE_TTL_STATS)
+def get_cached_stats():
+    """Récupère les stats avec mise en cache."""
+    metrics.record_cache_miss()
+    return get_stats()
+
+
+@cached(ttl=CACHE_TTL_SOURCES)
+def get_cached_sources():
+    """Récupère les sources avec mise en cache."""
+    metrics.record_cache_miss()
+    return list(get_stats()["by_source"].keys())
+
+
+# =============================================================================
+# CYCLE DE VIE
 # =============================================================================
 
 @asynccontextmanager
@@ -57,40 +127,78 @@ async def lifespan(app: FastAPI):
 
 
 # =============================================================================
-# SECTION 2 – APPLICATION
+# APPLICATION
 # =============================================================================
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
-_frontend_url = os.environ.get("FRONTEND_URL", "")
-_cors_origins  = [_frontend_url] if _frontend_url else ["*"]
-
 app = FastAPI(
     title="Alternax – API Alternances",
     description="Offres d'alternance collectées automatiquement",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan,
+    docs_url="/api/docs" if FEATURE_SWAGGER else None,
+    redoc_url="/api/redoc" if FEATURE_SWAGGER else None,
 )
 
+cors_origins = get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=cors_origins,
     allow_methods=["GET"],
     allow_headers=["*"],
 )
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
-logger.info(f"CORS origins: {_cors_origins}")
+logger.info(f"CORS origins: {cors_origins}")
+logger.info(f"Features: health_check={FEATURE_HEALTH_CHECK}, metrics={FEATURE_METRICS}, swagger={FEATURE_SWAGGER}")
 
 
 # =============================================================================
-# SECTION 3 – ENDPOINTS
+# HEALTH & METRICS ENDPOINTS
+# =============================================================================
+
+if FEATURE_HEALTH_CHECK:
+    @app.get("/api/health")
+    async def health_check():
+        """Vérification de l'état de l'application."""
+        try:
+            # Teste la connexion à la base
+            stats = get_stats()
+            return {
+                "status": "healthy",
+                "timestamp": time.time(),
+                "database": "connected",
+                "offers_count": stats.get("total", 0)
+            }
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "error": str(e),
+                    "timestamp": time.time()
+                }
+            )
+
+
+if FEATURE_METRICS:
+    @app.get("/api/metrics")
+    async def get_api_metrics():
+        """Retourne les métriques de l'API."""
+        return metrics.get_stats()
+
+
+# =============================================================================
+# MAIN ENDPOINTS
 # =============================================================================
 
 @app.get("/")
 async def serve_frontend():
-    """Sert la page d'accueil en local (en prod, le frontend est sur Vercel)."""
+    """Sert la page d'accueil en local."""
+    metrics.record_request("frontend")
     return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
@@ -103,6 +211,7 @@ async def list_offres(
     per_page: int = Query(20, ge=1, le=100),
 ):
     """Liste les offres avec filtres et pagination."""
+    metrics.record_request("offres")
     try:
         # Validate and sanitize inputs
         if page < 1:
@@ -144,10 +253,13 @@ async def list_offres(
 
 @app.get("/api/stats")
 async def api_stats():
-    """Retourne les statistiques globales."""
+    """Retourne les statistiques globales (cachées)."""
+    metrics.record_request("stats")
     try:
-        stats = get_stats()
-        logger.info(f"Stats: {stats['total']} total offers, {len(stats['by_source'])} sources")
+        # Utilise le cache pour éviter les requêtes fréquentes
+        stats = get_cached_stats()
+        metrics.record_cache_hit()
+        logger.info(f"Stats: {stats['total']} total offers")
         return stats
     except Exception as e:
         logger.error(f"Error in api_stats: {e}", exc_info=True)
@@ -161,10 +273,11 @@ async def api_stats():
 
 @app.get("/api/sources")
 async def api_sources():
-    """Retourne la liste des sources disponibles."""
+    """Retourne la liste des sources disponibles (cachées)."""
+    metrics.record_request("sources")
     try:
-        stats = get_stats()
-        sources = list(stats["by_source"].keys())
+        sources = get_cached_sources()
+        metrics.record_cache_hit()
         logger.info(f"Available sources: {sources}")
         return sources
     except Exception as e:

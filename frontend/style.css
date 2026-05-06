@@ -1,20 +1,55 @@
 /* style.css — styles complémentaires à Tailwind */
 
-/* Carte offre */
+/* =============================================================================
+   ANIMATIONS
+   ============================================================================= */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* =============================================================================
+   CARTES D'OFFRES
+   ============================================================================= */
+
 .offer-card {
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 20px;
-  transition: box-shadow 0.15s, transform 0.15s;
+  transition: all 0.2s ease;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  animation: fadeIn 0.4s ease forwards;
 }
 
+.offer-card:nth-child(1) { animation-delay: 0.05s; }
+.offer-card:nth-child(2) { animation-delay: 0.1s; }
+.offer-card:nth-child(3) { animation-delay: 0.15s; }
+.offer-card:nth-child(4) { animation-delay: 0.2s; }
+.offer-card:nth-child(n+5) { animation-delay: 0.25s; }
+
 .offer-card:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: translateY(-4px);
+  border-color: #93c5fd;
 }
 
 .offer-title {
@@ -68,10 +103,11 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #eff6ff;
-  color: #2563eb;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  color: #1e40af;
+  box-shadow: 0 1px 2px rgba(30, 64, 175, 0.1);
 }
 
 .offer-link {
@@ -79,54 +115,153 @@
   color: #2563eb;
   font-weight: 500;
   text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
 }
 
 .offer-link:hover {
-  text-decoration: underline;
+  background: #dbeafe;
+  transform: translateX(2px);
 }
 
-/* Boutons pagination */
+/* =============================================================================
+   PAGINATION
+   ============================================================================= */
+
 .page-btn {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
   background: white;
   font-size: 0.875rem;
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: all 0.15s ease;
+  font-weight: 500;
 }
 
 .page-btn:hover {
-  background: #eff6ff;
+  background: #f0f9ff;
   color: #2563eb;
-  border-color: #bfdbfe;
+  border-color: #93c5fd;
+  transform: translateY(-2px);
+}
+
+.page-btn:active {
+  transform: translateY(0);
 }
 
 .page-btn.active {
-  background: #2563eb;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
   color: white;
   border-color: #2563eb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
 }
 
-/* Toast notification */
+/* =============================================================================
+   LOADING & STATES
+   ============================================================================= */
+
+.loading-skeleton {
+  background: linear-gradient(90deg, #f3f4f6, #e5e7eb, #f3f4f6);
+  background-size: 200% 100%;
+  animation: pulse 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 3px solid #e5e7eb;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+#loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+#loading.hidden {
+  display: none;
+}
+
+#empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #9ca3af;
+}
+
+#empty-state.hidden {
+  display: none;
+}
+
+#empty-state h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 8px;
+}
+
+/* =============================================================================
+   TOAST NOTIFICATIONS
+   ============================================================================= */
+
 .toast {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  background: #1e3a5f;
+  background: linear-gradient(135deg, #1e3a5f, #1a2d47);
   color: white;
-  padding: 12px 20px;
+  padding: 14px 20px;
   border-radius: 10px;
   font-size: 0.875rem;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-  transform: translateY(80px);
+  font-weight: 500;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  transform: translateY(100px);
   opacity: 0;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   z-index: 100;
+  max-width: 90%;
 }
 
 .toast.show {
   transform: translateY(0);
   opacity: 1;
+  animation: slideUp 0.3s ease forwards;
+}
+
+/* =============================================================================
+   RESPONSIVE
+   ============================================================================= */
+
+@media (max-width: 768px) {
+  .offer-card {
+    padding: 16px;
+  }
+
+  .offer-title {
+    font-size: 0.95rem;
+  }
+
+  .page-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 0.8rem;
+  }
+
+  .toast {
+    bottom: 16px;
+    right: 16px;
+    left: 16px;
+    max-width: none;
+  }
 }
