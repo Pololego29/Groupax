@@ -277,9 +277,11 @@ class IndeedScraper:
         """
         Lance le scraping sur toutes les pages configurées.
         """
+        import os
+        headless = os.environ.get("HEADLESS", "0") == "1"
         async with async_playwright() as p:
             browser = await p.chromium.launch(
-                headless=True,
+                headless=headless,
                 args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
             )
 

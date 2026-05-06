@@ -27,4 +27,5 @@ jobs:
       - name: Lancer le scraper
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HEADLESS: "1"
         run: python -m scrapers.run_scraper
