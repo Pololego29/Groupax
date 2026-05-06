@@ -10,9 +10,12 @@ Deux niveaux de déduplication :
 """
 
 import hashlib
+import logging
 from dataclasses import asdict
 
 from database.db import insert_offers_bulk, url_exists
+
+logger = logging.getLogger(__name__)
 
 
 # =============================================================================
@@ -64,6 +67,7 @@ def deduplicate(offers: list[dict]) -> list[dict]:
     seen_urls         = set()
     seen_fingerprints = set()
     unique: list[dict] = []
+    duplicates_count = 0
 
     for offer in offers:
         url         = offer.get("url", "")
@@ -71,18 +75,25 @@ def deduplicate(offers: list[dict]) -> list[dict]:
 
         # --- Dédup interne au batch ---
         if url and url in seen_urls:
+            logger.debug(f"Duplicate URL in batch: {url}")
+            duplicates_count += 1
             continue
         if fingerprint in seen_fingerprints:
+            logger.debug(f"Duplicate fingerprint: {offer.get('title')}")
+            duplicates_count += 1
             continue
 
         # --- Dédup contre la base (par URL) ---
         if url and url_exists(url):
+            logger.debug(f"Offer already exists in database: {url}")
+            duplicates_count += 1
             continue
 
         seen_urls.add(url)
         seen_fingerprints.add(fingerprint)
         unique.append(offer)
 
+    logger.info(f"Deduplication: {len(offers)} offers → {len(unique)} unique (skipped {duplicates_count})")
     return unique
 
 
@@ -103,13 +114,31 @@ def process_and_save(offers) -> int:
     Returns:
         Nombre d'offres réellement insérées
     """
-    # Conversion dataclass → dict si nécessaire
-    offer_dicts = []
-    for o in offers:
-        offer_dicts.append(asdict(o) if hasattr(o, "__dataclass_fields__") else o)
+    try:
+        if not offers:
+            logger.warning("process_and_save called with empty list")
+            return 0
+        
+        logger.info(f"Processing {len(offers)} offers...")
+        
+        # Conversion dataclass → dict si nécessaire
+        offer_dicts = []
+        for o in offers:
+            try:
+                offer_dicts.append(asdict(o) if hasattr(o, "__dataclass_fields__") else o)
+            except Exception as e:
+                logger.warning(f"Failed to convert offer to dict: {e}")
+                continue
 
-    unique = deduplicate(offer_dicts)
-    inserted = insert_offers_bulk(unique)
-
-    print(f"[pipeline] {len(offers)} offres reçues → {len(unique)} nouvelles → {inserted} insérées")
-    return inserted
+        unique = deduplicate(offer_dicts)
+        
+        if not unique:
+            logger.info("No unique offers to insert")
+            return 0
+        
+        inserted = insert_offers_bulk(unique)
+        logger.info(f"Pipeline result: {len(offers)} → {len(unique)} unique → {inserted} inserted")
+        return inserted
+    except Exception as e:
+        logger.error(f"Pipeline error: {e}", exc_info=True)
+        raise

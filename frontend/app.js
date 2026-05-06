@@ -23,31 +23,49 @@ document.addEventListener("DOMContentLoaded", () => {
 // =============================================================================
 
 async function loadStats() {
-  const data = await fetchJson(`${API}/stats`);
-  if (!data) return;
+  try {
+    const data = await fetchJson(`${API}/stats`);
+    if (!data) {
+      console.warn("Failed to load stats");
+      return;
+    }
 
-  document.getElementById("stat-total").textContent = data.total.toLocaleString("fr-FR");
+    const totalEl = document.getElementById("stat-total");
+    if (totalEl) {
+      totalEl.textContent = (data.total || 0).toLocaleString("fr-FR");
+    }
 
-  // Badge par source
-  const sourcesEl = document.getElementById("stat-sources");
-  sourcesEl.innerHTML = Object.entries(data.by_source)
-    .map(([src, count]) => `
-      <div>
-        <span class="opacity-70 capitalize">${src}</span>
-        <span class="ml-1 font-semibold">${count.toLocaleString("fr-FR")}</span>
-      </div>
-    `).join("");
+    // Badge par source
+    const sourcesEl = document.getElementById("stat-sources");
+    if (sourcesEl) {
+      sourcesEl.innerHTML = Object.entries(data.by_source || {})
+        .map(([src, count]) => `
+          <div>
+            <span class="opacity-70 capitalize">${escapeHtml(src)}</span>
+            <span class="ml-1 font-semibold">${(count || 0).toLocaleString("fr-FR")}</span>
+          </div>
+        `).join("");
+    }
 
-  // Dernière collecte
-  const raw = data.last_scrape;
-  const lastEl = document.getElementById("stat-last");
-  if (raw && raw !== "Jamais") {
-    const d = new Date(raw);
-    lastEl.textContent = d.toLocaleString("fr-FR", {
-      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
-    });
-  } else {
-    lastEl.textContent = "Jamais";
+    // Dernière collecte
+    const lastEl = document.getElementById("stat-last");
+    if (lastEl) {
+      const raw = data.last_scrape || "Jamais";
+      if (raw && raw !== "Jamais") {
+        try {
+          const d = new Date(raw);
+          lastEl.textContent = d.toLocaleString("fr-FR", {
+            day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"
+          });
+        } catch (e) {
+          lastEl.textContent = raw;
+        }
+      } else {
+        lastEl.textContent = "Jamais";
+      }
+    }
+  } catch (e) {
+    console.error("Error loading stats:", e);
   }
 }
 
@@ -56,16 +74,25 @@ async function loadStats() {
 // =============================================================================
 
 async function loadSources() {
-  const sources = await fetchJson(`${API}/sources`);
-  if (!sources) return;
+  try {
+    const sources = await fetchJson(`${API}/sources`);
+    if (!sources || !Array.isArray(sources)) {
+      console.warn("No sources data received");
+      return;
+    }
 
-  const select = document.getElementById("source");
-  sources.forEach(src => {
-    const opt = document.createElement("option");
-    opt.value = src;
-    opt.textContent = src.charAt(0).toUpperCase() + src.slice(1);
-    select.appendChild(opt);
-  });
+    const select = document.getElementById("source");
+    if (!select) return;
+    
+    sources.forEach(src => {
+      const opt = document.createElement("option");
+      opt.value = src;
+      opt.textContent = src.charAt(0).toUpperCase() + src.slice(1);
+      select.appendChild(opt);
+    });
+  } catch (e) {
+    console.error("Error loading sources:", e);
+  }
 }
 
 // =============================================================================
@@ -73,38 +100,55 @@ async function loadSources() {
 // =============================================================================
 
 async function loadOffers(page = 1) {
-  currentPage = page;
-  showLoading(true);
+  try {
+    currentPage = page;
+    showLoading(true);
 
-  const search   = document.getElementById("search").value.trim();
-  const location = document.getElementById("location").value.trim();
-  const source   = document.getElementById("source").value;
+    const search   = (document.getElementById("search")?.value || "").trim();
+    const location = (document.getElementById("location")?.value || "").trim();
+    const source   = document.getElementById("source")?.value || "";
 
-  const params = new URLSearchParams({ page, per_page: 20 });
-  if (search)   params.set("search", search);
-  if (location) params.set("location", location);
-  if (source)   params.set("source", source);
+    const params = new URLSearchParams({ page, per_page: 20 });
+    if (search)   params.set("search", search);
+    if (location) params.set("location", location);
+    if (source)   params.set("source", source);
 
-  const data = await fetchJson(`${API}/offres?${params}`);
-  showLoading(false);
+    const data = await fetchJson(`${API}/offres?${params}`);
+    showLoading(false);
 
-  if (!data) return;
+    if (!data) {
+      showToast("Erreur lors du chargement des offres");
+      renderOffers([]);
+      return;
+    }
 
+    renderOffers(data.offers || []);
+    renderPagination(data.page || 1, data.pages || 0);
+
+  } catch (e) {
+    console.error("Error loading offers:", e);
+    showLoading(false);
+    showToast("Erreur de chargement");
+    renderOffers([]);
+  }
+}
+
+function renderOffers(offers) {
   const grid  = document.getElementById("offers-grid");
   const empty = document.getElementById("empty-state");
   const count = document.getElementById("result-count");
 
-  if (data.offers.length === 0) {
-    grid.innerHTML = "";
-    empty.classList.remove("hidden");
-    count.textContent = "";
-  } else {
-    empty.classList.add("hidden");
-    count.textContent = `${data.total.toLocaleString("fr-FR")} offres trouvées`;
-    grid.innerHTML = data.offers.map(renderCard).join("");
-  }
+  if (!grid) return;
 
-  renderPagination(data.page, data.pages);
+  if (!offers || offers.length === 0) {
+    grid.innerHTML = "";
+    if (empty) empty.classList.remove("hidden");
+    if (count) count.textContent = "";
+  } else {
+    if (empty) empty.classList.add("hidden");
+    if (count) count.textContent = `${offers.length} offres trouvées`;
+    grid.innerHTML = offers.map(renderCard).join("");
+  }
 }
 
 // =============================================================================
@@ -219,32 +263,49 @@ function refresh() {
 
 async function fetchJson(url) {
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      timeout: 10000
+    });
+    if (!res.ok) {
+      console.error(`HTTP Error ${res.status}: ${res.statusText}`);
+      return null;
+    }
     return await res.json();
   } catch (e) {
-    console.error("Erreur API :", e);
+    console.error("API Error:", e);
+    showToast("Erreur de connexion à l'API");
     return null;
   }
 }
 
 function showLoading(show) {
-  document.getElementById("loading").classList.toggle("hidden", !show);
-  document.getElementById("offers-grid").classList.toggle("hidden", show);
+  const loading = document.getElementById("loading");
+  const grid = document.getElementById("offers-grid");
+  if (loading) loading.classList.toggle("hidden", !show);
+  if (grid) grid.classList.toggle("hidden", show);
 }
 
 function formatDate(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  } catch (e) {
+    console.error("Date format error:", e);
+    return iso;
+  }
 }
 
 function escapeHtml(str) {
+  if (!str) return "";
   return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 }
 
 function showToast(msg) {

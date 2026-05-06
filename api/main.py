@@ -19,6 +19,7 @@ Variables d'environnement :
     FRONTEND_URL  : Restreint le CORS à cette origine (absent = ouvert)
 """
 
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -33,6 +34,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from database.db import init_db, get_offers, get_stats
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 
 # =============================================================================
 # SECTION 1 – CYCLE DE VIE
@@ -40,8 +47,12 @@ from database.db import init_db, get_offers, get_stats
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    print("[api] Base de données initialisée")
+    try:
+        init_db()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}", exc_info=True)
+        raise
     yield
 
 
@@ -70,6 +81,8 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
+logger.info(f"CORS origins: {_cors_origins}")
+
 
 # =============================================================================
 # SECTION 3 – ENDPOINTS
@@ -89,24 +102,71 @@ async def list_offres(
     page:     int = Query(1,  ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ):
-    offers, total = get_offers(
-        search=search, location=location, source=source,
-        page=page, per_page=per_page,
-    )
-    return {
-        "offers":   offers,
-        "total":    total,
-        "page":     page,
-        "per_page": per_page,
-        "pages":    max(1, -(-total // per_page)),
-    }
+    """Liste les offres avec filtres et pagination."""
+    try:
+        # Validate and sanitize inputs
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:
+            per_page = 20
+        
+        search = search.strip() if search else ""
+        location = location.strip() if location else ""
+        source = source.strip() if source else ""
+        
+        logger.info(f"Query: search='{search}', location='{location}', source='{source}', page={page}, per_page={per_page}")
+        
+        offers, total = get_offers(
+            search=search, location=location, source=source,
+            page=page, per_page=per_page,
+        )
+        
+        logger.info(f"Returned {len(offers)} offers (total: {total})")
+        
+        return {
+            "offers":   offers,
+            "total":    total,
+            "page":     page,
+            "per_page": per_page,
+            "pages":    max(1, -(-total // per_page)),
+        }
+    except Exception as e:
+        logger.error(f"Error in list_offres: {e}", exc_info=True)
+        return {
+            "offers": [],
+            "total": 0,
+            "page": page,
+            "per_page": per_page,
+            "pages": 0,
+            "error": "Failed to fetch offers"
+        }
 
 
 @app.get("/api/stats")
 async def api_stats():
-    return get_stats()
+    """Retourne les statistiques globales."""
+    try:
+        stats = get_stats()
+        logger.info(f"Stats: {stats['total']} total offers, {len(stats['by_source'])} sources")
+        return stats
+    except Exception as e:
+        logger.error(f"Error in api_stats: {e}", exc_info=True)
+        return {
+            "total": 0,
+            "by_source": {},
+            "last_scrape": "Jamais",
+            "error": "Failed to fetch statistics"
+        }
 
 
 @app.get("/api/sources")
 async def api_sources():
-    return list(get_stats()["by_source"].keys())
+    """Retourne la liste des sources disponibles."""
+    try:
+        stats = get_stats()
+        sources = list(stats["by_source"].keys())
+        logger.info(f"Available sources: {sources}")
+        return sources
+    except Exception as e:
+        logger.error(f"Error in api_sources: {e}", exc_info=True)
+        return []

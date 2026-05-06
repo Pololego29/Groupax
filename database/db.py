@@ -11,10 +11,13 @@ En local : laisser DATABASE_URL vide → SQLite dans data/offers.db
 En prod  : définir DATABASE_URL=postgresql://user:pass@host/db
 """
 
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DB_PATH      = Path(__file__).parent.parent / "data" / "offers.db"
@@ -51,25 +54,32 @@ class _Conn:
 @contextmanager
 def get_conn():
     """Retourne une connexion normalisée vers SQLite ou PostgreSQL."""
-    if _USE_PG:
-        import psycopg2
-        from psycopg2.extras import DictCursor
-        raw = psycopg2.connect(DATABASE_URL)
-        raw.cursor_factory = DictCursor
-    else:
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        raw = sqlite3.connect(str(DB_PATH))
-        raw.row_factory = sqlite3.Row
-
-    conn = _Conn(raw, use_pg=_USE_PG)
     try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
+        if _USE_PG:
+            import psycopg2
+            from psycopg2.extras import DictCursor
+            raw = psycopg2.connect(DATABASE_URL)
+            raw.cursor_factory = DictCursor
+            logger.debug("PostgreSQL connection established")
+        else:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            raw = sqlite3.connect(str(DB_PATH))
+            raw.row_factory = sqlite3.Row
+            logger.debug(f"SQLite connection: {DB_PATH}")
+
+        conn = _Conn(raw, use_pg=_USE_PG)
+        try:
+            yield conn
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Database error: {e}", exc_info=True)
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Connection failed: {e}", exc_info=True)
         raise
-    finally:
-        conn.close()
 
 
 # =============================================================================
@@ -82,25 +92,30 @@ _SCHEMA_TS = "TIMESTAMP DEFAULT NOW()" if _USE_PG else "TEXT DEFAULT (datetime('
 
 def init_db() -> None:
     """Crée la table offers et ses index si nécessaire."""
-    with get_conn() as conn:
-        conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS offers (
-                id            {_SCHEMA_PK},
-                title         TEXT      NOT NULL,
-                company       TEXT      DEFAULT '',
-                location      TEXT      DEFAULT '',
-                contract_type TEXT      DEFAULT 'Alternance',
-                salary        TEXT      DEFAULT '',
-                description   TEXT      DEFAULT '',
-                url           TEXT      UNIQUE,
-                source        TEXT      DEFAULT '',
-                scraped_at    TEXT      DEFAULT '',
-                created_at    {_SCHEMA_TS}
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_source   ON offers(source)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_location ON offers(location)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_created  ON offers(created_at)")
+    try:
+        with get_conn() as conn:
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS offers (
+                    id            {_SCHEMA_PK},
+                    title         TEXT      NOT NULL,
+                    company       TEXT      DEFAULT '',
+                    location      TEXT      DEFAULT '',
+                    contract_type TEXT      DEFAULT 'Alternance',
+                    salary        TEXT      DEFAULT '',
+                    description   TEXT      DEFAULT '',
+                    url           TEXT      UNIQUE,
+                    source        TEXT      DEFAULT '',
+                    scraped_at    TEXT      DEFAULT '',
+                    created_at    {_SCHEMA_TS}
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_source   ON offers(source)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_location ON offers(location)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_created  ON offers(created_at)")
+            logger.info("Database schema initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}", exc_info=True)
+        raise
 
 
 # =============================================================================
@@ -136,19 +151,40 @@ def _params(offer: dict) -> list:
 
 def insert_offer(offer: dict) -> bool:
     """Insère une offre. Retourne True si insérée, False si déjà existante."""
-    with get_conn() as conn:
-        cur = conn.execute(_INSERT_SQL, _params(offer))
-        return cur.rowcount > 0
+    if not offer.get("url"):
+        logger.warning("Attempt to insert offer without URL")
+        return False
+    try:
+        with get_conn() as conn:
+            cur = conn.execute(_INSERT_SQL, _params(offer))
+            success = cur.rowcount > 0
+            if success:
+                logger.debug(f"Offer inserted: {offer.get('title')}")
+            return success
+    except Exception as e:
+        logger.error(f"Failed to insert offer: {e}", exc_info=True)
+        raise
 
 
 def insert_offers_bulk(offers: list[dict]) -> int:
     """Insère plusieurs offres en une transaction. Retourne le nombre inséré."""
-    inserted = 0
-    with get_conn() as conn:
-        for offer in offers:
-            cur = conn.execute(_INSERT_SQL, _params(offer))
-            inserted += cur.rowcount
-    return inserted
+    if not offers:
+        logger.warning("insert_offers_bulk called with empty list")
+        return 0
+    try:
+        inserted = 0
+        with get_conn() as conn:
+            for offer in offers:
+                if not offer.get("url"):
+                    logger.debug(f"Skipping offer without URL: {offer.get('title')}")
+                    continue
+                cur = conn.execute(_INSERT_SQL, _params(offer))
+                inserted += cur.rowcount
+        logger.info(f"Bulk insert: {inserted}/{len(offers)} offers inserted")
+        return inserted
+    except Exception as e:
+        logger.error(f"Failed to bulk insert: {e}", exc_info=True)
+        raise
 
 
 # =============================================================================
