@@ -66,6 +66,7 @@ class JobOffer:
     source: str         # Identifiant de la source ("indeed", "hellowork"…)
     # Génération automatique de l'horodatage
     scraped_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    category: str = ""   
  
     def __post_init__(self):
         if self.scraped_at is None:
